@@ -6,6 +6,9 @@ if(CMAKE_CXX_STANDARD EQUAL "98" )
    message(FATAL_ERROR "CMAKE_CXX_STANDARD:STRING=98 is not supported in.")
 endif()
 
+# do not allow python libraries to mask system libraries
+set(CMAKE_IGNORE_PREFIX_PATH "/space/freesurfer/python/linux/lib") 
+
 if(APPLE)
    set(CMAKE_C_COMPILER "/usr/bin/clang")
    set(CMAKE_CXX_COMPILER "/usr/bin/clang++")
@@ -45,6 +48,8 @@ option(PROFILING "Complile binaries for profiling with gprof" OFF)
 option(INSTALL_PYTHON_DEPENDENCIES "Install python package dependencies" ON)
 option(BUILD_FORTRAN "Build subdirs with source using gfortran" ON)
 option(PATCH_FSPYTHON "Build subdirs with source using gfortran" OFF)
+option(FSPYTHON_BUILD_REQ "Pip will use requirmenets files with a snapshot of pkg revisions when installing pkgs into fspython" OFF)
+option(FSL_INSTALL "force install of FSL binaries for linux platforms only" OFF)
 
 #  Modern compilers on new platforms often provide many more warnings than older compilers
 #  for example the gcc 7.5.0 compiler warnings about falling through switch statements
@@ -138,22 +143,40 @@ host_os()
 
 # -------- zlib --------
 find_package(ZLIB REQUIRED)
-add_definitions(-DHAVE_ZLIB)
+add_definitions(-DHAVE_ZLIB -DITK_USE_SYSTEM_ZLIB)
 
 # -------- gfortran/blas/lapack --------
 if(NOT APPLE)
+  if(HOST_OS MATCHES "CentOS9stream" OR HOST_OS MATCHES "CentOS9" OR HOST_OS MATCHES "CentOS8stream" OR HOST_OS MATCHES "CentOS8" OR HOST_OS MATCHES "Rocky8")
+     set(STATIC_QUADMATH OFF)
+     set(NO_STATIC_GFORTRAN ON)
+  endif()
+
   if(HOST_OS MATCHES "Ubuntu20" OR HOST_OS MATCHES "Ubuntu22")
-     # assume gcc8 tools distribution on Ubuntu 20 which contains its own libquadmath and libgfortran
-     find_library(GFORTRAN_LIBRARIES HINTS /usr/lib/gcc/x86_64-linux-gnu/8 NAMES libgfortran.a gfortran)
+     if(HOST_OS MATCHES "Ubuntu22" AND HOST_OS_GCC_VERSION MATCHES "11")
+        set(CMAKE_CXX_STANDARD 17)
+        # while does not compile...
+        set(BUILD_FORTRAN OFF)
+     endif()
+     # otherwise using gcc 8 or HOST_OS_GCC_VERSION=8
+     find_library(GFORTRAN_LIBRARIES HINTS /usr/lib/gcc/x86_64-linux-gnu/${HOST_OS_GCC_VERSION} NAMES libgfortran.a gfortran)
      find_library(BLAS_LIBRARIES NAMES libopenblas.a libblas.a)
      find_library(LAPACK_LIBRARIES NAMES liblapack.a)
-     find_library(QUADMATH_LIBRARIES HINTS /usr/lib/gcc/x86_64-linux-gnu/8 NAMES libquadmath.a libquadmath.so libquadmath.so.0)
+     find_library(QUADMATH_LIBRARIES HINTS /usr/lib/gcc/x86_64-linux-gnu/${HOST_OS_GCC_VERSION} NAMES libquadmath.a libquadmath.so libquadmath.so.0)
+  elseif(HOST_OS MATCHES "CentOS9stream" OR HOST_OS MATCHES "CentOS9")
+     find_library(GFORTRAN_LIBRARIES HINTS /usr/lib64 /usr/lib /usr/lib/gcc/*/*/ NAMES libgfortran.a gfortran)
+     find_library(QUADMATH_LIBRARIES HINTS /usr/lib64 /usr/lib /usr/lib/gcc/*/*/ NAMES libquadmath.a libquadmath.so libquadmath.so.0)
+     find_library(BLAS_LIBRARIES NAMES libblas.so.3)
+     find_library(LAPACK_LIBRARIES NAMES liblapack.so.3)
+     set(CMAKE_CXX_STANDARD 14)
   else()
      find_library(GFORTRAN_LIBRARIES HINTS /usr/lib64 /usr/lib /usr/lib/gcc/*/*/ NAMES libgfortran.a gfortran)
+     find_library(QUADMATH_LIBRARIES HINTS /usr/lib64 /usr/lib /usr/lib/gcc/*/*/ NAMES libquadmath.a libquadmath.so libquadmath.so.0)
      find_library(BLAS_LIBRARIES NAMES libopenblas.a libblas.a)
      find_library(LAPACK_LIBRARIES NAMES liblapack.a)
-     find_library(QUADMATH_LIBRARIES HINTS /usr/lib64 /usr/lib /usr/lib/gcc/*/*/ NAMES libquadmath.a libquadmath.so libquadmath.so.0)
   endif()
+  message(STATUS "C/C++ standard set to ${CMAKE_CXX_STANDARD} for Linux build on ${HOST_OS} with gcc/g++ version ${HOST_OS_GCC_VERSION}")
+
   if(NOT QUADMATH_LIBRARIES)
     set(QUADMATH_LIBRARIES "")
   endif()
@@ -169,29 +192,6 @@ endif()
 
 # -------- petsc --------
 find_package(PETSC)
-
-# -------- itk --------
-if(NOT ITK_DIR)
-   if(HOST_OS MATCHES "CentOS8" OR HOST_OS MATCHES "CentOS8stream" OR HOST_OS MATCHES "Rocky8")
-      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.2_centos8 CACHE PATH "ITK install directory")
-   elseif(HOST_OS MATCHES "Ubuntu20" OR HOST_OS MATCHES "Ubuntu22")
-      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.2_ubuntu20 CACHE PATH "ITK install directory")
-   elseif(HOST_OS MATCHES "CentOS7")
-      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.2_centos7 CACHE PATH "ITK install directory")
-   elseif(HOST_OS MATCHES "Ubuntu18")
-      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.2_ubuntu18 CACHE PATH "ITK install directory")
-   elseif(APPLE AND NOT APPLE_ARM64)
-      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.2_darwin CACHE PATH "ITK install directory")
-   elseif(APPLE AND APPLE_ARM64)
-      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.0/lib/cmake CACHE PATH "ITK install directory")
-   else()
-      # default
-      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.2 CACHE PATH "ITK install directory")
-   endif()
-endif()
-
-find_package(ITK HINTS ${ITK_DIR} REQUIRED)
-message(STATUS "For HOST_OS=${HOST_OS} ITK_DIR=${ITK_DIR}")
 
 # -------- ann --------
 # ANN is only used by mris_resample
@@ -236,6 +236,9 @@ if(NOT APPLE)
   find_package(OpenCV)
 endif()
 
+# -------- openssl --------
+find_package(OpenSSL REQUIRED)
+
 # -------- X11 ---------
 find_package(X11)
 
@@ -270,7 +273,10 @@ if(BUILD_GUIS)
 
 if(NOT Qt6_DIR)
   if(NOT Qt5_DIR)
-     if(HOST_OS MATCHES "CentOS7" OR HOST_OS MATCHES "CentOS8" OR HOST_OS MATCHES "CentOS8stream" OR HOST_OS MATCHES "Rocky8")
+     if(HOST_OS MATCHES "CentOS9stream" OR HOST_OS MATCHES "CentOS9")
+        # 5.15.9 from natively installed packages
+        set(Qt5_DIR /lib64/cmake/Qt5 CACHE PATH "Qt5 install directory")
+     elseif(HOST_OS MATCHES "CentOS8stream" OR HOST_OS MATCHES "CentOS8" OR HOST_OS MATCHES "Rocky8")
         set(Qt5_DIR ${FS_PACKAGES_DIR}/qt/5.12.11_LTS_cos7/lib/cmake/Qt5 CACHE PATH "Qt5 install directory")
      elseif(HOST_OS MATCHES "Ubuntu18" OR HOST_OS MATCHES "Ubuntu20" OR HOST_OS MATCHES "Ubuntu22")
         set(Qt5_DIR ${FS_PACKAGES_DIR}/qt/5.12.11_LTS_ub18/lib/cmake/Qt5 CACHE PATH "Qt5 install directory")
@@ -293,10 +299,16 @@ endif()
 
 endif()
 
+# Preceed itk with vtk as itk may look for vtk files and do not want
+# those found thru alternatives that may be in the default search paths.
 # -------- vtk --------
 
 if(NOT VTK_DIR)
-   set(VTK_DIR ${FS_PACKAGES_DIR}/vtk/7.1 CACHE PATH "VTK install directory")
+	if(HOST_OS MATCHES "CentOS9stream" OR HOST_OS MATCHES "CentOS9")
+      set(VTK_DIR ${FS_PACKAGES_DIR}/vtk/8.2/lib64/cmake/vtk-8.2 CACHE PATH "VTK install directory")
+   else()
+      set(VTK_DIR ${FS_PACKAGES_DIR}/vtk/7.1 CACHE PATH "VTK install directory")
+   endif()
 endif()
 
 find_package(VTK HINTS ${VTK_DIR})
@@ -332,6 +344,35 @@ if(VTK_FOUND AND VTK_BUILD_SHARED_LIBS)
     set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib/vtk:${CMAKE_INSTALL_RPATH}")
   endif()
 endif()
+
+
+# -------- itk --------
+if(NOT ITK_DIR)
+	if(HOST_OS MATCHES "CentOS9stream" OR HOST_OS MATCHES "CentOS9")
+      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/5.4.0_centos8/lib/cmake CACHE PATH "ITK install directory")
+   elseif(HOST_OS MATCHES "CentOS8stream" OR HOST_OS MATCHES "CentOS8" OR HOST_OS MATCHES "Rocky8")
+      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.2_centos8 CACHE PATH "ITK install directory")
+   elseif(HOST_OS MATCHES "Ubuntu20" OR HOST_OS MATCHES "Ubuntu22")
+      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.2_ubuntu20 CACHE PATH "ITK install directory")
+   elseif(HOST_OS MATCHES "CentOS7")
+      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.2_centos7 CACHE PATH "ITK install directory")
+   elseif(HOST_OS MATCHES "Ubuntu18")
+      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.2_ubuntu18 CACHE PATH "ITK install directory")
+   elseif(APPLE AND NOT APPLE_ARM64)
+      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.2_darwin CACHE PATH "ITK install directory")
+   elseif(APPLE AND APPLE_ARM64)
+      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.0/lib/cmake CACHE PATH "ITK install directory")
+   else()
+      # default
+      set(ITK_DIR ${FS_PACKAGES_DIR}/itk/4.13.2 CACHE PATH "ITK install directory")
+   endif()
+endif()
+
+find_package(ITK HINTS ${ITK_DIR} REQUIRED)
+message(STATUS "For HOST_OS=${HOST_OS} ITK_DIR=${ITK_DIR}")
+
+# ------ list where the build tree is ------
+message(STATUS "Compiling source under build tree ${CMAKE_BINARY_DIR}")
 
 # --------------------------------------------------
 #              global system information
@@ -414,14 +455,14 @@ endif()
 if(NOT NO_CXX_WARN)
   if(WARNING_AS_ERROR)
     set(WARN_AS_ERROR_FLAG "-Werror")
-    if(HOST_OS MATCHES "CentOS8" OR HOST_OS MATCHES "CentOS8stream" OR HOST_OS MATCHES "Rocky8")
+    if(HOST_OS MATCHES "CentOS9stream" OR HOST_OS MATCHES "CentOS9" OR HOST_OS MATCHES "CentOS8stream" OR HOST_OS MATCHES "CentOS8" OR HOST_OS MATCHES "Rocky8")
        # -Wno-cpp needed with gcc8 for /usr/pubse/packages/vtk 7.1 compiled with older compilers
        # -Wno-restrict needed with gcc8 for ./freesurfer/mris_compute_acorr/mris_compute_acorr.cpp
        # -Wno-format-overflow needed with gcc8 for ./fresurfer/mris2rgb/mris2rgb.cpp
-       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra ${WARN_AS_ERROR_FLAG} -Wno-cpp -Wno-restrict -Wno-format-overflow -Wno-sign-compare -Wno-unused-result -Wno-unused-parameter")
+       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra ${WARN_AS_ERROR_FLAG} -Wno-cpp -Wno-restrict -Wno-format-overflow -Wno-sign-compare -Wno-unused-result -Wno-unused-parameter -Wno-bool-compare")
     elseif(HOST_OS MATCHES "Ubuntu20" OR HOST_OS MATCHES "Ubuntu22")
        # uses gcc8 as well
-       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-builtin -Wall -Wextra ${WARN_AS_ERROR_FLAG} -Wno-cpp -Wno-restrict -Wno-format-overflow -Wno-sign-compare -Wno-unused-result -Wno-unused-parameter")
+       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-builtin -Wall -Wextra ${WARN_AS_ERROR_FLAG} -Wno-cpp -Wno-restrict -Wno-format-overflow -Wno-sign-compare -Wno-unused-result -Wno-unused-parameter -Wno-bool-compare")
     elseif(HOST_OS MATCHES "MacOS-12" OR HOST_OS MATCHES "MacOS-13")
        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-non-c-typedef-for-linkage")
     else ()
@@ -493,7 +534,12 @@ add_subdirectory(utils)
 # by default) is maintained for darwin_x86_64 and all linux contexts.
 
 # the following utility libraries are required for freeview
-if(NOT APPLE_ARM64)
+# if(NOT APPLE_ARM64)
+if(APPLE_ARM64)
+   message(STATUS "For HOST_OS=${HOST_OS}skipping lineprof")
+   #elseif(HOST_OS MATCHES "CentOS9stream" OR HOST_OS MATCHES "CentOS9")
+#   message(STATUS "For HOST_OS=${HOST_OS} skipping lineprof")
+else()
    add_subdirectory(lineprof)
 endif()
 add_subdirectory(vtkutils)
@@ -564,6 +610,7 @@ add_subdirectories(
   mri_segment
   mri_segreg
   mri_segstats
+  mri_si_prep
   mri_stats2seg
   mri_surf2surf
   mri_surf2vol
@@ -654,6 +701,7 @@ if(NOT MINIMAL)
     mri_copy_values
     mri_cor2label
     mri_correct_segmentations
+    mri_ctab_fix
     mri_cvs_register
     mri_dct_align
     mri_distance_transform
@@ -677,6 +725,7 @@ if(NOT MINIMAL)
     mri_head
     mri_hires_register
     mri_histo_eq
+    mri_histo_util
     mri_jacobian
     mri_joint_density
     mri_label_histo
@@ -722,6 +771,7 @@ if(NOT MINIMAL)
     mri_volsynth
     mri_warp_convert
     mri_wbc
+    mri_WMHsynthseg
     mri_xvolavg
     mri_z2p
     mris2rgb
@@ -817,12 +867,15 @@ if(NOT MINIMAL)
     template
     test_makevol
     ThalamicNuclei
+    ThalamicNucleiDTI
     trc
     tridec
+    unittests
     ventfix
     pointset2label
     recon_all_clinical
     mri_segment_thalamic_nuclei_dti_cnn
+    mris_register_josa
   )
 endif()
 
@@ -847,7 +900,7 @@ if(EXISTS "./mri_make_bem_surfaces")
    if(HOST_OS MATCHES "CentOS7")
       add_subdirectories(mri_make_bem_surfaces)
       message(STATUS "Adding mri_make_bem_surfaces to build on ${HOST_OS}")
-   elseif(HOST_OS MATCHES "CentOS8" OR HOST_OS MATCHES "Rocky8")
+   elseif(HOST_OS MATCHES "CentOS9stream" OR HOST_OS MATCHES "CentOS9" OR HOST_OS MATCHES "CentOS8stream" OR HOST_OS MATCHES "CentOS8" OR HOST_OS MATCHES "Rocky8")
       add_subdirectories(mri_make_bem_surfaces)
       message(STATUS "Adding mri_make_bem_surfaces to build on ${HOST_OS}")
    elseif(HOST_OS MATCHES "Ubuntu20" OR HOST_OS MATCHES "Ubuntu22")

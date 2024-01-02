@@ -266,10 +266,12 @@ int FDRSign = 0;
 int nErodeNN=0, NNType=0;
 
 static int replace_only = 0 ;
+int transitive_replace = 1;
 int nReplace = 0, SrcReplace[1000], TrgReplace[1000], 
     nReplaceNN = 0, SrcReplaceNN[1000], ReplaceWindowNN[1000];
 char *SurfFile=NULL;
 int nsmoothsurf=0;
+COLOR_TABLE *cmdlinectab=NULL;
 
 int noverbose = 0;
 int DoBB = 0, nPadBB=0;
@@ -515,7 +517,7 @@ int main(int argc, char *argv[]) {
   } // if(!replace_only)
 
   if(nReplace != 0) {
-    if (replace_only)
+    if (replace_only && transitive_replace)
     {
       printf("Replacing %d and propagating source list\n",nReplace);
       OutVol = MRIcopy(InVol, NULL) ;
@@ -602,7 +604,7 @@ int main(int argc, char *argv[]) {
         }	// r
       }		// c
     }		// frame
-  }
+  } // nReplaceNN != 0
 
   if (noverbose == 0 && replace_only == 0) 
     printf("Found %d values in range\n",nhits);
@@ -629,7 +631,10 @@ int main(int argc, char *argv[]) {
     MRIfree(&mritmp);
   }
 
-  nhits = -1;
+  // not sure why we are counting again
+  // nhit was one off voxel counts reported earlier if starting from -1
+  // the count reported in CountFile had negative values when count was really zero
+  nhits = 0;
   if(DoCount && !replace_only){
     if(noverbose == 0) printf("Counting number of voxels in first frame\n");
     #ifdef HAVE_OPENMP
@@ -668,7 +673,9 @@ int main(int argc, char *argv[]) {
   }
 
   // if we didn't binarize, copy any embedded color table from the input
-  if (replace_only && (InVol->ct)) OutVol->ct = CTABdeepCopy(InVol->ct);
+  if(replace_only && (InVol->ct)) OutVol->ct = CTABdeepCopy(InVol->ct);
+  // Or copy the ctab passed on the command line
+  if(cmdlinectab) OutVol->ct = CTABdeepCopy(cmdlinectab);
 
   if(RemoveIslands){
     printf("Removing Volume Islands\n");fflush(stdout);
@@ -974,7 +981,9 @@ static int parse_commandline(int argc, char **argv) {
       sscanf(pargv[0],"%d",&nPadBB);
       DoBB = 1;
       nargsused = 1;
-    }    
+    }
+    else if (!strcasecmp(option, "--no-transitive-replace"))
+      transitive_replace = 0;
     else if (!strcasecmp(option, "--replace")) {
       if(nargc < 2) CMDargNErr(option,2);
       sscanf(pargv[0],"%d",&SrcReplace[nReplace]);
@@ -1028,6 +1037,11 @@ static int parse_commandline(int argc, char **argv) {
       nargsused = nth;
       DoMatch = 1;
     } 
+    else if (!strcasecmp(option, "--ctab")) {
+      if(nargc < 1) CMDargNErr(option,1);
+      cmdlinectab = CTABreadASCII(pargv[0]);
+      nargsused = 1;
+    }
     else if (!strcasecmp(option, "--match-ctab")) {
       if(nargc < 1) CMDargNErr(option,1);
       COLOR_TABLE *ctab = CTABreadASCII(pargv[0]);
@@ -1180,7 +1194,12 @@ static void usage_exit(void) {
 static void print_usage(void) {
   printf("USAGE: %s \n",Progname) ;
   printf("\n");
-  printf("   --i invol  : input volume \n");
+  printf("  Program to binarize a volume (or volume-encoded surface file). Can also\n");
+  printf("  be used to merge with other binarizations. Binarization can be done\n");
+  printf("  based on threshold or on matched values.\n");
+  printf("\n");
+
+  printf("   --i invol  : input volume to be binarized\n");
   printf("   \n");
   printf("   --min min  : min thresh (def is -inf)\n");
   printf("   --max max  : max thresh (def is +inf)\n");
@@ -1192,6 +1211,9 @@ static void print_usage(void) {
   printf("   --match matchval <matchval2 ...>  : match instead of threshold\n");
   printf("   --match-ctab colortable  : match all entries in the given color table\n");
   printf("   --replace V1 V2 : replace voxels=V1 with V2\n");
+  printf("      Replace every occurrence of (int) value V1 with value V2.\n");
+  printf("      If multiple --replace args are specified, transitive replacements are performed by defaults.\n");
+  printf("    --no-transitive-replace : turn off transitive replacements \n");
   printf("   --replaceonly V1 V2 : replace voxels=V1 with V2 and propagate other src voxels instead of binarizing\n");
   printf("   --replace-nn V1 W : replace voxels=V1 with their nearest neighbor within a window of W voxels\n");
   printf("   --replaceonly-nn V1 W : replace voxels=V1 with their nearest neighbor within a window of W voxels and propagate other src voxels instead of binarizing\n");
@@ -1313,6 +1335,8 @@ printf("--replace V1 V2\n");
 printf("\n");
 printf("Replace every occurrence of (int) value V1 with value V2. Multiple \n");
 printf("--replace args are possible.\n");
+printf("If multiple --replace args are specified, transitive replacements are performed by defaults.\n");
+printf("--no-transitive-replace : turn off transitive replacements \n"); 
 printf("\n");
 printf("--replaceonly V1 V2\n");
 printf("\n");

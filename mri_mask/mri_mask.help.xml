@@ -50,6 +50,8 @@
       <explanation>Create and extract data from a bounding box around the mask. The bounding box is expanded by npad[X] voxels in each direction. npad should be at least 1 to avoid clipping</explanation>
       <argument>-bbmm npad1a npad1b npad2a npad2b npad3a npad3b</argument>
       <explanation>Create and extract data from a bounding box around the mask. The bounding box is expanded by npad[X] voxels in each direction. npad should be at least 1 to avoid clipping</explanation>
+      <argument>-bbeq npad</argument>
+      <explanation>Create bounding box around mask such that ncols=nrows and nslices is odd (good for STIR)</explanation>
       <argument>-abs</argument>
       <explanation>take abs() before applying threshold</explanation>
       <argument>-invert, -no-invert</argument>
@@ -68,6 +70,8 @@
       <explanation>transfer only voxel value # from mask to out</explanation>
       <argument>-keep_mask_deletion_edits</argument>
       <explanation>transfer voxel-deletion edits (voxels=1) from mask to out vol</explanation>
+      <argument>-no-allow-diff-geom</argument>
+      <explanation>Do not allow MRImask() to apply a registration when inputs have different geom</explanation>
     </optional-flagged>
   </arguments>
   <outputs>

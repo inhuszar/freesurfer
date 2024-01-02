@@ -1872,6 +1872,8 @@ COLOR_TABLE *TissueTypeSchemaDefault(COLOR_TABLE *ct)
       case Brain_Stem: // was WM
       case Spinal_Cord: //( same as brainstem)
       case 174:  // Pons,  was WM
+      case Left_undetermined:
+      case Right_undetermined:
       case non_WM_hypointensities:  // not sure
         TT = TTSubCtxGM;
         break;
@@ -2042,6 +2044,8 @@ COLOR_TABLE *TissueTypeSchemaDefaultHead(COLOR_TABLE *ct)
       case 174:  // Pons,  was WM
       case 267:  // Pons-Belly-Area
       case non_WM_hypointensities:  // not sure
+      case Left_undetermined:
+      case Right_undetermined:
         TT = TTSubCtxGM;
         break;
 
@@ -2252,6 +2256,7 @@ COLOR_TABLE *TissueTypeSchemaLat(COLOR_TABLE *ct)
       case 179:  // Floculus
       case 183:  // Left-Vermis
       case non_WM_hypointensities:  // not sure
+      case Left_undetermined:
         TT = TTSubCtxGMlh;
         break;
 
@@ -2264,6 +2269,7 @@ COLOR_TABLE *TissueTypeSchemaLat(COLOR_TABLE *ct)
       case Right_Caudate:
       case Right_Accumbens_area:
       case Right_VentralDC:
+      case Right_undetermined:
       case 184:  // Right-Vermis
         TT = TTSubCtxGMrh;
         break;
@@ -2604,4 +2610,123 @@ int CTABaddUniqueEntryAtEnd(COLOR_TABLE *ct, char *name, int *ctabindex)
   ct->nentries++;
 
   return NO_ERROR;
+}
+
+
+// generate unique annotation the given COLOR_TABLE
+int CTABgenUniqueAnnotation(const COLOR_TABLE *ctab1, const COLOR_TABLE *ctab2)
+{
+  int ri, gi, bi;
+  int rgbi_1 = -1, rgbi_2 = -1;
+  do
+  { 
+    ri = nint(randomNumber(0, 255));
+    gi = nint(randomNumber(0, 255));
+    bi = nint(randomNumber(0, 255));
+
+    CTABfindRGBi((COLOR_TABLE *)ctab1, ri, gi, bi, &rgbi_1);
+    if (ctab2 != NULL)
+      CTABfindRGBi((COLOR_TABLE *)ctab1, ri, gi, bi, &rgbi_2);
+  } while (rgbi_1 >= 0 || rgbi_2 >= 0);
+
+  int annotation;
+  RGBToAnnot(ri, gi, bi, annotation);
+
+  return annotation;
+}
+
+// if suggestAnnot is true,
+// duplicated annotation assignment in ctab will be replaced with newly calculated suggestion
+int CTABprintAnnotationAssignment(COLOR_TABLE *ctab, bool suggestAnnot, FILE *fp, const char *exception)
+{
+  int dupCount = 0;
+  
+  if (fp == NULL)
+    fp = stdout;
+
+  if (suggestAnnot)
+    setRandomSeed(12);
+
+  // unique_annot_map is sorted
+  //   key   = annotation
+  //   value = label-id vector  
+  std::map<int, std::vector<int>> unique_annot_map;
+  for (int numentry = 0; numentry < ctab->nentries; numentry++)
+  {
+    if (ctab->entries[numentry] != NULL)
+    {
+      int r = ctab->entries[numentry]->ri;
+      int g = ctab->entries[numentry]->gi;
+      int b = ctab->entries[numentry]->bi;
+
+      /* Duplicated macros are defined 
+       *   in mrisurf.h as MRISAnnotToRGB and MRISRGBToAnnot, and
+       *   in colortable.h as AnnotToRGB and RGBToAnnot.
+       * annotation => RGB are also calculated in CTABfindAnnotation(), CTABgetAnnotationName()
+       * RGB => annotation are also calculated in CTABrgb2Annotation(), CTABannotationAtIndex()
+       */
+      int annotation;  //int annotation = CTABrgb2Annotation(r, g, b);
+      RGBToAnnot(r, g, b, annotation);
+      unique_annot_map[annotation].push_back(numentry);
+    }
+  }
+
+  // print annotation and all label-ids assinged
+  // suggest new annotation if it is requested
+  std::map<int, std::vector<int>>::const_iterator annotIt = unique_annot_map.begin();
+  for (annotIt = unique_annot_map.begin(); annotIt != unique_annot_map.end(); annotIt++)
+  {
+    int r, g, b;
+
+    int annot = annotIt->first; 
+    AnnotToRGB(annot, r, g, b);
+    int nlabels = annotIt->second.size();
+    fprintf(fp, "%8d (%-3d) :", annot, nlabels); // left-justified
+
+    int first = 1;
+    std::vector<int>::const_iterator labelIt = annotIt->second.begin();
+    for (; labelIt != annotIt->second.end(); labelIt++)
+    {
+      const char *labelname = ctab->entries[*labelIt]->name;
+      if (exception != NULL && strncmp(labelname, exception, strlen(exception)) == 0 && !first)
+      {
+	fprintf(fp, "%16s %-6d (%-3d %-3d %-3d) (%8d) %s\n", " ", *labelIt, r, g, b, annot, labelname);
+	continue;
+      }
+      
+      if (first || !suggestAnnot)
+      {
+	if (first)
+	{
+          first = 0;
+          fprintf(fp, " %-6d (%-3d %-3d %-3d) (%8d) %s\n", *labelIt, r, g, b, annot, labelname);
+	}
+	else
+	  fprintf(fp, "%16s %-6d (%-3d %-3d %-3d) (%8d) %s\n", " ", *labelIt, r, g, b, annot, labelname);
+      }
+      else
+      {
+	dupCount++;
+
+        // these are label ids assigned to the same annotation
+        // suggest a different annotation
+	int ri, gi, bi;
+	annot = CTABgenUniqueAnnotation(ctab);
+	AnnotToRGB(annot, ri, gi, bi);
+        fprintf(fp, "%15s *%-6d (%-3d %-3d %-3d) (%8d) %s\n", " ", *labelIt, ri, gi, bi, annot, labelname);
+
+	// replace the entry with newly calculated annotation
+	ctab->entries[*labelIt]->ri = ri;
+	ctab->entries[*labelIt]->gi = gi;
+	ctab->entries[*labelIt]->bi = bi;
+
+	// the float versions
+	ctab->entries[*labelIt]->rf = (float)ri / 255.0;
+	ctab->entries[*labelIt]->gf = (float)gi / 255.0;
+	ctab->entries[*labelIt]->bf = (float)bi / 255.0;
+      }
+    }
+  }
+
+  return dupCount;
 }

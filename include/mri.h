@@ -531,7 +531,10 @@ public:
   int gcamorphSpacing  = 1;                  // spacing in GCA_MORPH
   double gcamorphExp_k = 0.0;                // exp_k in GCA_MORPH
 
-  MATRIX *gcamorphAffine = nullptr;     // m_affine in GCA_MORPH
+  MATRIX *gcamorphAffine = nullptr;          // m_affine in GCA_MORPH
+  int   ***gcamorphLabel = nullptr;          // label in GCA_MORPH_NODE
+
+  void initGCAMorphLabel();
 
   // ---- image buffer ----
   int type;                     // image data type
@@ -552,7 +555,7 @@ public:
 typedef struct
 {
   int type; // MB_RADIAL or MB_TANGENTIAL
-  double offset,slope;
+  double offset,slope; //Offset is in mm; Slope is per centimeter (not mm)
   int c0,r0; // center of motion in full volume space
   int cR,rR; // col and row of first voxel of region in full volume space
   double DeltaD; // sample spacing along radius
@@ -981,8 +984,7 @@ MRI   *MRIgaussianSmooth(MRI *src, double std, int norm, MRI *targ);
 MRI   *MRImaskedGaussianSmooth(MRI *src, MRI *binmask, double std, MRI *targ);
 MRI   *MRIconvolveGaussianMeanAndStdByte(MRI *mri_src, MRI *mri_dst,
     MRI *mri_gaussian) ;
-MRI *MRIgaussianSmoothNI(MRI *src, double cstd, double rstd, double sstd,
-			 MRI *targ);
+MRI *MRIgaussianSmoothNI(MRI *src, double cstd, double rstd, double sstd, MRI *targ);
 
 /* frequency filtering*/
 MRI* MRI_fft(MRI *mri_src, MRI* dst);
@@ -1750,10 +1752,13 @@ int mghWrite(MRI *mri, const char *fname, int frame=-1);
 int N_Zero_Pad_Input  = -1;
 int N_Zero_Pad_Output = -1;
 int MRIIO_Strip_Pound = 1;
+// Mixture model components for MRIgaussianSmoothNI()
+float smni_cw1=1, smni_cstd2=0, smni_rw1=1, smni_rstd2=0, smni_sw1=1, smni_sstd2=0;
 #else
 extern int N_Zero_Pad_Input;
 extern int N_Zero_Pad_Output;
 extern int MRIIO_Strip_Pound;
+extern float smni_cw1, smni_cstd2, smni_rw1, smni_rstd2, smni_sw1, smni_sstd2;
 #endif
 
 float MRIfovCol(MRI *mri);

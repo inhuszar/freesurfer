@@ -33,6 +33,7 @@
 #include <QMessageBox>
 #include "DialogAddPointSetStat.h"
 #include "DialogControlPointComment.h"
+#include "ToolWindowLesionPopup.h"
 #ifdef Q_OS_MAC
 #include "MacHelper.h"
 #endif
@@ -83,14 +84,24 @@ PanelPointSet::PanelPointSet(QWidget *parent) :
     ui->commentsContentWidget->setStyleSheet(QString("#commentsContentWidget {background-color:#1E1E1E;}"));
 #endif
 
-  connect( ui->spinBoxOverallScore, SIGNAL(valueChanged(int)), SLOT(OnSpinBoxOverallScore(int)));
-  connect( ui->spinBoxSecondQA, SIGNAL(valueChanged(int)), SLOT(OnSpinBoxSecondQA(int)));
-  connect( ui->textEditOverallQuality, SIGNAL(textChanged()), SLOT(OnTextOverallQualityChanged()));
-  connect( ui->checkBoxFixed, SIGNAL(toggled(bool)), SLOT(OnCheckBoxFixed(bool)));
+  m_toolLesionPopup = new ToolWindowLesionPopup(mainwnd);
+  m_toolLesionPopup->hide();
+  connect(m_toolLesionPopup, SIGNAL(GoToPointChanged(int)), SLOT(OnSpinBoxGoToPoint(int)), Qt::QueuedConnection);
+  connect(m_toolLesionPopup, SIGNAL(GoToPointTriggered()), SLOT(OnButtonGoToPoint()), Qt::QueuedConnection);
+  connect(m_toolLesionPopup, SIGNAL(RadiusTextChanged(QString)), SLOT(OnLineEditRadius(QString)));
+  connect(m_toolLesionPopup, SIGNAL(PointColorChanged(QColor)), ui->colorpickerPointColor, SLOT(setCurrentColor(QColor)), Qt::QueuedConnection);
+  connect(m_toolLesionPopup, SIGNAL(OpacityChanged(double)), ui->doubleSpinBoxOpacity, SLOT(setValue(double)));
+
+  connect(ui->spinBoxOverallScore, SIGNAL(valueChanged(int)), SLOT(OnSpinBoxOverallScore(int)));
+  connect(ui->spinBoxSecondQA, SIGNAL(valueChanged(int)), SLOT(OnSpinBoxSecondQA(int)));
+  connect(ui->textEditOverallQuality, SIGNAL(textChanged()), SLOT(OnTextOverallQualityChanged()));
+  connect(ui->checkBoxFixed, SIGNAL(toggled(bool)), SLOT(OnCheckBoxFixed(bool)));
+  connect(ui->pushButtonLesionPopup, SIGNAL(clicked(bool)), SLOT(OnButtonLesionPopup()));
 }
 
 PanelPointSet::~PanelPointSet()
 {
+  m_toolLesionPopup->deleteLater();
   delete ui;
 }
 
@@ -135,7 +146,7 @@ void PanelPointSet::DoIdle()
 void PanelPointSet::DoUpdateWidgets()
 {
   BlockAllSignals( true );
-  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
   for ( int i = 0; i < this->allWidgets.size(); i++ )
   {
     if ( allWidgets[i] != ui->toolbar && allWidgets[i]->parentWidget() != ui->toolbar )
@@ -233,6 +244,8 @@ void PanelPointSet::DoUpdateWidgets()
   ShowWidgets( m_widgetlistHeatScale, bShowSpline && layer && nColorMap == LayerPropertyPointSet::HeatScale );
 
   UpdatePointInfo();
+
+  m_toolLesionPopup->UpdateUI(layer);
 
   BlockAllSignals( false );
 }
@@ -421,7 +434,7 @@ void PanelPointSet::LoadScalarValues()
 
 void PanelPointSet::SetCurrentPoint(int nIndex)
 {
-  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
   if (layer)
   {
     if (nIndex >= layer->GetNumberOfPoints())
@@ -433,6 +446,9 @@ void PanelPointSet::SetCurrentPoint(int nIndex)
       ui->spinBoxGoToPoint->blockSignals(true);
       ui->spinBoxGoToPoint->setValue(nIndex+1);
       ui->spinBoxGoToPoint->blockSignals(false);
+
+      m_toolLesionPopup->SetCurrentPoint(nIndex);
+
       DoUpdateWidgets();
     }
   }
@@ -440,7 +456,7 @@ void PanelPointSet::SetCurrentPoint(int nIndex)
 
 void PanelPointSet::OnSpinBoxGoToPoint(int val)
 {
-  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
   if (layer && layer->GetNumberOfPoints() > 0)
   {
     double pt[3];
@@ -501,7 +517,7 @@ QTreeWidgetItem* PanelPointSet::AddStatItem(const QString &name, double value)
 void PanelPointSet::UpdatePointInfo()
 {
   BlockAllSignals(true);
-  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
   int nIndex = ui->spinBoxGoToPoint->value()-1;
   if ( layer && layer->GetNumberOfPoints() > nIndex )
   {
@@ -538,6 +554,8 @@ void PanelPointSet::UpdatePointInfo()
     }
 
     m_mapCurrentPoint[layer] = nIndex;
+
+    m_toolLesionPopup->UpdatePointInfo(nIndex, &p);
   }
   BlockAllSignals(false);
 }
@@ -565,7 +583,7 @@ void PanelPointSet::OnButtonCommentAdd()
     ui->scrollAreaComments->widget()->adjustSize();
     QTimer::singleShot(0, this, SLOT(ScrollCommentsToBottom()));
 
-    LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+    LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
     int nIndex = ui->spinBoxGoToPoint->value()-1;
     if (layer && nIndex < layer->GetNumberOfPoints())
     {
@@ -583,7 +601,7 @@ void PanelPointSet::OnCommentLabelClicked(const QString &link)
   if (!l)
     return;
 
-  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
   int nIndex = ui->spinBoxGoToPoint->value()-1;
   if (layer && nIndex < layer->GetNumberOfPoints())
   {
@@ -645,7 +663,7 @@ void PanelPointSet::OnStatItemChanged(QTreeWidgetItem *item, int col)
     return;
   }
 
-  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
   int nIndex = ui->spinBoxGoToPoint->value()-1;
   if (!layer || nIndex >= layer->GetNumberOfPoints())
     return;
@@ -694,7 +712,7 @@ void PanelPointSet::OnStatItemChanged(QTreeWidgetItem *item, int col)
 
 void PanelPointSet::OnButtonStatAdd()
 {
-  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
   int nIndex = ui->spinBoxGoToPoint->value()-1;
   if (layer && nIndex < layer->GetNumberOfPoints())
   {
@@ -722,7 +740,7 @@ void PanelPointSet::OnButtonStatDelete()
   QTreeWidgetItem* item = ui->treeWidgetStats->currentItem();
   if (item && ui->treeWidgetStats->indexOfTopLevelItem(item) != 0)
   {
-    LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+    LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
     int nIndex = ui->spinBoxGoToPoint->value()-1;
     if (layer && nIndex < layer->GetNumberOfPoints())
     {
@@ -738,7 +756,7 @@ void PanelPointSet::OnButtonStatDelete()
 
 void PanelPointSet::OnCheckBoxFixed(bool b)
 {
-  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
   int nIndex = ui->spinBoxGoToPoint->value()-1;
   if (layer && nIndex < layer->GetNumberOfPoints())
   {
@@ -755,7 +773,7 @@ void PanelPointSet::OnCurrentStatItemChanged(QTreeWidgetItem *cur, QTreeWidgetIt
 
 void PanelPointSet::OnTextOverallQualityChanged()
 {
-  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
   if (layer)
     layer->SetEnhancedData("overall_quality", ui->textEditOverallQuality->toPlainText());
 }
@@ -763,16 +781,20 @@ void PanelPointSet::OnTextOverallQualityChanged()
 
 void PanelPointSet::OnSpinBoxOverallScore(int val)
 {
-  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
   if (layer)
     layer->SetEnhancedData("overall_score", val);
 }
 
 void PanelPointSet::OnSpinBoxSecondQA(int val)
 {
-  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>();
+  LayerPointSet* layer = GetCurrentLayer<LayerPointSet*>(true);
   if (layer)
     layer->SetEnhancedData("qa_level", val);
 }
 
-
+void PanelPointSet::OnButtonLesionPopup()
+{
+  m_toolLesionPopup->show();
+  m_toolLesionPopup->raise();
+}

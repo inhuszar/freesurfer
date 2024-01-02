@@ -442,8 +442,8 @@ int __m3zWrite(const GCA_MORPH *gcam, const char *fname)
     }
   }
   if (gcam->m_affine) {
-    //printf("write gcamorph TAG_GCAMORPH_AFFINE ...\n");
-    znzwriteInt(TAG_GCAMORPH_AFFINE, file);
+    //printf("[DEBUG] __m3zWrite(): TAG_MGH_XFORM ...\n");
+    znzwriteInt(TAG_MGH_XFORM, file);
     // MatrixAsciiWriteInto(file, gcam->m_affine) ;
     znzWriteMatrix(file, gcam->m_affine, 0);
   }
@@ -1219,7 +1219,6 @@ GCA_MORPH *__m3zRead(const char *fname)
   int x, y, z, width, height, depth;
   GCA_MORPH_NODE *gcamn;
   float version;
-  int tag;
   int gzipped = 0;
   if (strstr(fname, ".m3z")) {
     gzipped = 1;
@@ -1286,9 +1285,19 @@ GCA_MORPH *__m3zRead(const char *fname)
   gcam->det = 1;
   gcam->image.valid = 0;  // make src invalid
   gcam->atlas.valid = 0;  // makd dst invalid
-  while (znzreadIntEx(&tag, file)) {
+
+  // tag reading
+  long long len;
+  while (getenv("FS_SKIP_TAGS") == NULL)
+  {
+    int tag = znzTAGreadStart(file, &len, TAG_MGH_XFORM);
+    //printf("[DEBUG] __m3zRead(): read TAG = %d\n", tag);
+    if (tag == 0)
+      break;
+    
     switch (tag) {
       case TAG_GCAMORPH_LABELS:
+	//printf("[DEBUG] __m3zRead(): TAG_GCAMORPH_LABELS\n");
         if (Gdiag & DIAG_SHOW && DIAG_VERBOSE_ON) {
           printf("reading labels out of gcam file...\n");
         }
@@ -1306,8 +1315,8 @@ GCA_MORPH *__m3zRead(const char *fname)
         }
         break;
       case TAG_GCAMORPH_GEOM:
+	//printf("[DEBUG] __m3zRead(): TAG_GCAMORPH_GEOM\n");
         //GCAMreadGeom(gcam, file);
-	//printf("read TAG_GCAMORPH_GEOM ...\n");
 	gcam->image.read(file);
         gcam->atlas.read(file);
         if ((Gdiag & DIAG_SHOW) && DIAG_VERBOSE_ON) {
@@ -1321,17 +1330,18 @@ GCA_MORPH *__m3zRead(const char *fname)
         }
         break;
       case TAG_GCAMORPH_TYPE:
+	//printf("[DEBUG] __m3zRead(): TAG_GCAMORPH_TYPE\n");
         gcam->type = znzreadInt(file);
         if (Gdiag & DIAG_SHOW && DIAG_VERBOSE_ON) {
           printf("gcam->type = %s\n", gcam->type == GCAM_VOX ? "vox" : "ras");
         }
         break;
       case TAG_MGH_XFORM:
-      case TAG_GCAMORPH_AFFINE:
+	//printf("[DEBUG] __m3zRead(): TAG_MGH_XFORM\n");
         // gcam->m_affine = MatrixAsciiReadFrom(fp, NULL) ;
-	//printf("read gcamorph TAG_MGH_XFORM/TAG_GCAMORPH_AFFINE ...\n");
         gcam->m_affine = znzReadMatrix(file);
         gcam->det = MatrixDeterminant(gcam->m_affine);
+	//MatrixPrint(stdout, gcam->m_affine);  // DEBUG
         break;
     }
   }
@@ -4431,7 +4441,7 @@ MRI *GCAMmorphToAtlas(MRI *mri_src, GCA_MORPH *gcam, MRI *mri_morphed, int frame
               DiagBreak();
             }
 
-            if (xd > -1 && yd > -1 && zd > 0 && xd < mri_src->width && yd < mri_src->height && zd < mri_src->depth) {
+            if (xd > -1 && yd > -1 && ((mri_src->depth == 1 && zd == 0) || (mri_src->depth > 1 && zd > 0)) && xd < mri_src->width && yd < mri_src->height && zd < mri_src->depth) {
               if (sample_type == SAMPLE_CUBIC_BSPLINE) {
                 MRIsampleBSpline(bspline, xd, yd, zd, frame, &val);
               }
@@ -4569,7 +4579,7 @@ MRI *GCAMmorphToAtlasType(MRI *mri_src, GCA_MORPH *gcam, MRI *mri_morphed, int f
           yd /= mri_src->thick;
           zd /= mri_src->thick;
           for (frame = start_frame; frame <= end_frame; frame++) {
-            if (xd > -1 && yd > -1 && zd > 0 && xd < width && yd < height && zd < depth) {
+            if (xd > -1 && yd > -1 && ((depth == 1 && zd == 0) || (depth > 1 && zd > 0)) && xd < width && yd < height && zd < depth) {
               if (interp_type == SAMPLE_CUBIC_BSPLINE)
               // recommended to externally call this and keep mri_coeff
               // if image is resampled often (e.g. in registration algo)

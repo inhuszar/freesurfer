@@ -204,6 +204,7 @@ if(BUILD_GUIS AND VTK_FOUND AND TARGET vtkutils)
     DialogMovePoint.cpp
     VolumeFilterOptimal.cpp
     DialogSaveAllVolumes.cpp
+    ToolWindowLesionPopup.cpp
     freeview.qrc
   )
 
@@ -273,6 +274,7 @@ if(BUILD_GUIS AND VTK_FOUND AND TARGET vtkutils)
 
   if(PETSC_FOUND AND NOT ARM64)
      target_link_libraries(freeview
+       nifti
        vtkutils
        lineprof
        ${VTK_LIBRARIES}
@@ -288,6 +290,7 @@ if(BUILD_GUIS AND VTK_FOUND AND TARGET vtkutils)
      )
   else()
      target_link_libraries(freeview
+       nifti
        vtkutils
        ${VTK_LIBRARIES}
        ${ITK_LIBRARIES}

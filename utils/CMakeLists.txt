@@ -27,6 +27,7 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/packages/gifti
   SYSTEM
   ${ITK_INCLUDE_DIRS}
+  ${OpenSSL_INCLUDE_DIR}
 )
 
 add_library(utils STATIC
@@ -235,12 +236,14 @@ target_link_libraries(utils
   gifti
   expat
   ${ZLIB_LIBRARIES}
-  ${ITK_LIBRARIES}
+  ${ITKVNL_LIBRARIES}
   ${OMP_CXX_LIBRARIES}
 )
 
 if(NOT APPLE)
-  target_link_libraries(utils crypt rt)
+  target_link_libraries(utils crypt crypto rt)
+else()
+  target_link_libraries(utils ${OpenSSL_LIB_DIR}/libcrypto.a)
 endif()
 
 # utils binaries

@@ -2233,6 +2233,7 @@ MRI *MRImedian(MRI *mri_src, MRI *mri_dst, int wsize, MRI_REGION *box)
   wcubed = (wsize * wsize * wsize);
   median_index = wcubed / 2;
   whalf = wsize / 2;
+  printf("wsize %d wcubed %d  whalf %d\n",wsize,wcubed,whalf);
 
   if (sort_array && (wcubed != sort_size)) {
     free(sort_array);
@@ -2242,7 +2243,6 @@ MRI *MRImedian(MRI *mri_src, MRI *mri_dst, int wsize, MRI_REGION *box)
     sort_array = (float *)calloc(wcubed, sizeof(float));
     sort_size = wcubed;
   }
-
   if (box) {
     xmin = box->x;
     ymin = box->y;
@@ -6511,7 +6511,8 @@ MRI *MRI_fft_highpass(MRI *src, MRI *dst, int percent)
   smoothing.  The standard deviation of the gaussian is std.  The mean
   is preserved (ie, sets the kernel integral to 1).  Can be done
   in-place. Handles multiple frames. See also MRIconvolveGaussian()
-  and MRImaskedGaussianSmooth().
+  and MRImaskedGaussianSmooth(). Has the capacity to do a 2-Gaussian
+  mixture model using external variables. 
   -------------------------------------------------------------------*/
 MRI *MRIgaussianSmoothNI(MRI *src, double cstd, double rstd, double sstd, MRI *targ)
 {
@@ -6519,6 +6520,8 @@ MRI *MRIgaussianSmoothNI(MRI *src, double cstd, double rstd, double sstd, MRI *t
   MATRIX *G;
   MATRIX *vr = NULL, *vc = NULL, *vs = NULL;
   long double scale, vmf;
+  // mixture model 
+  extern float smni_cw1, smni_cstd2, smni_rw1, smni_rstd2, smni_sw1, smni_sstd2;
 
   if (targ == NULL) {
     targ = MRIallocSequence(src->width, src->height, src->depth, MRI_FLOAT, src->nframes);
@@ -6553,9 +6556,16 @@ MRI *MRIgaussianSmoothNI(MRI *src, double cstd, double rstd, double sstd, MRI *t
     printf("MRIgaussianSmoothNI(): %d avail. processors, running in %d threads\n", omp_get_num_procs(), omp_get_max_threads());
 #endif
 
+  if(Gdiag_no > 0 && (smni_cw1 != 1 || smni_rw1 != 1 || smni_sw1 != 1)){
+    printf("MRIgaussianSmoothNI(): G2: %g %g %g  %g %g %g\n",
+	   smni_cw1, smni_cstd2, smni_rw1, smni_rstd2, smni_sw1, smni_sstd2);
+  }
+  fflush(stdout);
+
   /* -----------------Smooth the columns -----------------------------*/
   if (cstd > 0) {
-    G = GaussianMatrix(src->width, cstd / src->xsize, 1, NULL);
+    if(smni_cw1 == 1) G = GaussianMatrix(src->width, cstd / src->xsize, 1, NULL);
+    else  G = GaussianMatrix2(src->width, cstd/src->xsize, smni_cstd2/src->xsize, smni_cw1, 1, NULL);
     ROMP_PF_begin
 #ifdef HAVE_OPENMP
     #pragma omp parallel for
@@ -6594,7 +6604,9 @@ MRI *MRIgaussianSmoothNI(MRI *src, double cstd, double rstd, double sstd, MRI *t
   /* -----------------Smooth the rows -----------------------------*/
   if (rstd > 0) {
     if (Gdiag_no > 0 && DIAG_VERBOSE_ON) printf("Smoothing rows\n");
-    G = GaussianMatrix(src->height, (double)rstd / src->ysize, 1, NULL);
+    if(smni_rw1 == 1) G = GaussianMatrix(src->height, (double)rstd / src->ysize, 1, NULL);
+    else  G = GaussianMatrix2(src->height, rstd/src->ysize, smni_rstd2/src->ysize, smni_rw1, 1, NULL);
+
     ROMP_PF_begin
 #ifdef HAVE_OPENMP
     #pragma omp parallel for
@@ -6637,7 +6649,10 @@ MRI *MRIgaussianSmoothNI(MRI *src, double cstd, double rstd, double sstd, MRI *t
   /* Smooth the slices */
   if (sstd > 0) {
     // printf("Smoothing slices by std=%g\n",sstd);
-    G = GaussianMatrix(src->depth, sstd / src->zsize, 1, NULL);
+    
+    if(smni_sw1 == 1) G = GaussianMatrix(src->depth, sstd / src->zsize, 1, NULL);
+    else  G = GaussianMatrix2(src->depth, sstd/src->zsize, smni_sstd2/src->zsize, smni_sw1, 1, NULL);
+
     ROMP_PF_begin
 #ifdef HAVE_OPENMP
     #pragma omp parallel for
@@ -6961,7 +6976,8 @@ MRI *MRInbrThresholdLabel(MRI *mri_src, MRI *mri_dst, int label, int out_label, 
   through a given voxel and the center. A segment of this line is
   selected based on the FHWM at that point. The input image is sampled
   every DeltaD along that line and convolved with the Gaussian
-  kernel. Cannot be done in-place.
+  kernel. Cannot be done in-place. Offset is in mm. Slope is per
+  centimeter (not mm).
  */
 MRI *MRImotionBlur2D(MRI *src, MB2D *mb, MRI *out)
 {
@@ -7032,7 +7048,8 @@ MRI *MRImotionBlur2D(MRI *src, MB2D *mb, MRI *out)
       dx = dc * src->xsize;                // mm distance in x from center
       dy = dr * src->ysize;                // mm distance in y from center
       d0 = sqrt(dx * dx + dy * dy);        // mm dist to cur vox
-      fwhm = mb->offset + mb->slope * d0;  // compute FWHM based on distance
+      // divide slope by 100 to make it more in the range of FWHM
+      fwhm = mb->offset + d0*mb->slope/100; // compute FWHM based on distance
       stddev = fwhm / sqrt(log(256.0));
       ndlim = ceil(mb->cutoff * stddev / mb->DeltaD);
       nd = 2 * ndlim + 1;         // number of samples to integrate over
@@ -7244,3 +7261,5 @@ MRI *MB2Dgrid(MRI *mri_template, int skip, MRI *outvol)
   }    // c
   return (outvol);
 }
+
+

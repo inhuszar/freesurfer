@@ -716,9 +716,14 @@ MATRIX *MatrixMultiply_wkr(const MATRIX *m1, const MATRIX *m2, MATRIX *m3, const
   float val, *r1, *r2;
   MATRIX *m_tmp1 = NULL, *m_tmp2 = NULL;
 
-  if (!m1) ErrorExit(ERROR_BADPARM, "MatrixMultiply: m1 is null!\n");
-  if (!m2) ErrorExit(ERROR_BADPARM, "MatrixMultiply: m2 is null!\n");
-
+  if(!m1){
+    printf("MatrixMultiply(): m1 is null \n break %s:%d\n", __FILE__, __LINE__);
+    ErrorExit(ERROR_BADPARM, "MatrixMultiply: m1 is null\n");
+  }
+  if(!m2){
+    printf("MatrixMultiply(): m2 is null \n break %s:%d\n", __FILE__, __LINE__);
+    ErrorExit(ERROR_BADPARM, "MatrixMultiply: m2 is null\n");
+  }
   if (m1->cols != m2->rows) {
     printf("MatrixMultiply(): m1/m2 dim mismatch\n break %s:%d\n", __FILE__, __LINE__);
     ErrorReturn(NULL, (ERROR_BADPARM, "MatrixMultiply: m1 cols %d does not match m2 rows %d\n", m1->cols, m2->rows));
@@ -1626,7 +1631,7 @@ MATRIX *MatrixCalculateEigenSystemHelper(MATRIX *m, float *evalues, MATRIX *m_ev
   if (m->rows != m->cols) return NULL;
 
   nevalues = m->rows;
-  eigen_values = (EVALUE *)calloc((UINT)nevalues, sizeof(EIGEN_VALUE));
+  eigen_values = (EVALUE *)calloc((unsigned int)nevalues, sizeof(EIGEN_VALUE));
   if (!m_evectors) m_evectors = MatrixAlloc(m->rows, m->cols, MATRIX_REAL);
 
   mTmp = MatrixAlloc(m->rows, m->cols, MATRIX_REAL);
@@ -1797,7 +1802,7 @@ float MatrixSVDEigenValues(MATRIX *m, float *evalues)
   /* calculate condition # of matrix */
   if (OpenSvdcmp(m_U, v_w, m_V) != NO_ERROR) return (Gerror);
 
-  eigen_values = (EVALUE *)calloc((UINT)nevalues, sizeof(EIGEN_VALUE));
+  eigen_values = (EVALUE *)calloc((unsigned int)nevalues, sizeof(EIGEN_VALUE));
   for (i = 0; i < nevalues; i++) {
     eigen_values[i].eno = i;
     eigen_values[i].evalue = RVECTOR_ELT(v_w, i + 1);
@@ -3524,6 +3529,22 @@ MATRIX *GaussianVector(int len, float mean, float std, int norm, MATRIX *g)
   }
 
   return (g);
+}
+
+/*!
+  \fn MATRIX *GaussianMatrix2(int len, float std1, float std2, float w1, int norm, MATRIX *G)
+  \brief Mixture of two Gaussians with weights w1 and (1-w1)
+*/
+MATRIX *GaussianMatrix2(int len, float std1, float std2, float w1, int norm, MATRIX *G)
+{
+  MATRIX *G1 = GaussianMatrix(len,std1,norm,NULL);
+  MatrixScalarMul(G1, w1, G1);
+  MATRIX *G2 = GaussianMatrix(len,std2,norm,NULL);
+  MatrixScalarMul(G2, 1-w1, G2);
+  G = MatrixAdd(G1,G2,G);
+  MatrixFree(&G1);
+  MatrixFree(&G2);
+  return(G);
 }
 
 /*---------------------------------------------------------------

@@ -232,6 +232,19 @@ MRI::MRI(Shape volshape, int dtype, bool alloc) : shape(volshape), type(dtype)
 }
 
 
+void MRI::initGCAMorphLabel()
+{
+  //printf("[DEBUG] MRI::initGCAMorphLabel()\n");
+  gcamorphLabel = (int ***)calloc(width, sizeof(int **));
+  for (int c = 0; c < width; c++)
+  {
+    gcamorphLabel[c] = (int **)calloc(height, sizeof(int *));
+    for (int r = 0; r < height; r++)
+      gcamorphLabel[c][r] = (int *)calloc(depth, sizeof(int));
+  }  
+}
+
+
 /**
   Allocates array of slice pointers - this is done regardless of chunking so that we
   can still support 3D-indexing and not produce any weird issues. This function should
@@ -7016,9 +7029,9 @@ IMAGE *MRItoImageView(MRI *mri, IMAGE *I, int slice, int view, int frame)
       MRIsampleVolumeFrame(mri, xm, ym, zm, frame, &val);
       yp = h - (y + 1); /* hips coordinate system is inverted */
       if (format == PFBYTE)
-        *IMAGEpix(I, x, yp) = (byte)(255.0 * (val - fmin) / (fmax - fmin));
+        *IMAGEpix(I, x, yp) = (ubyte)(255.0 * (val - fmin) / (fmax - fmin));
       else
-        *IMAGEFpix(I, x, yp) = (byte)(255.0 * (val - fmin) / (fmax - fmin));
+        *IMAGEFpix(I, x, yp) = (ubyte)(255.0 * (val - fmin) / (fmax - fmin));
     }
   }
 
