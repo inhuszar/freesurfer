@@ -142,9 +142,9 @@ struct GCA_MORPH
   int  neg ;
   double exp_k ;
   int  spacing ; // poor choice to make this an int
-  MRI  *mri_xind ;    /* MRI ->gcam transform */
-  MRI  *mri_yind ;
-  MRI  *mri_zind ;
+  MRI  *mri_xind=NULL ;    /* MRI ->gcam transform */
+  MRI  *mri_yind=NULL ;
+  MRI  *mri_zind=NULL ;
   VOL_GEOM   image;             /* image that the transforms maps to  */
   VOL_GEOM   atlas ;            /* atlas for the transform       */
   int        ninputs ;
@@ -311,7 +311,7 @@ int       GCAMinitLookupTables(GCA_MORPH *gcam) ;
 double    GCAMelasticEnergy(GCA_MORPH *gcam) ;
 MRI       *GCAMestimateLameConstants(GCA_MORPH *gcam) ;
 int       GCAMwrite( const GCA_MORPH *gcam, const char *fname );
-int       GCAMwriteInverse(const char *gcamfname, GCA_MORPH *gcam);
+//int       GCAMwriteInverse(const char *gcamfname, GCA_MORPH *gcam, MRI *mrtemplate=NULL);
 int       GCAMwriteInverseNonTal(const char *gcamfname, GCA_MORPH *gcam);
 GCA_MORPH *GCAMread(const char *fname) ;
 GCA_MORPH *GCAMreadAndInvert(const char *gcamfname);
@@ -378,7 +378,7 @@ int       GCAMcomputeLabels(MRI *mri, GCA_MORPH *gcam) ;
 MRI       *GCAMbuildMostLikelyVolume(GCA_MORPH *gcam, MRI *mri) ;
 MRI       *GCAMbuildLabelVolume(GCA_MORPH *gcam, MRI *mri) ;
 MRI       *GCAMbuildVolume(GCA_MORPH *gcam, MRI *mri) ;
-int       GCAMinvert(GCA_MORPH *gcam, MRI *mri) ;
+int       GCAMinvert(GCA_MORPH *gcam, MRI *mri=NULL) ;
 GCA_MORPH* GCAMfillInverse(GCA_MORPH* gcam);
 int       GCAMfreeInverse(GCA_MORPH *gcam) ;
 int       GCAMcomputeMaxPriorLabels(GCA_MORPH *gcam) ;
@@ -520,7 +520,7 @@ MRI  *GCAMinitDensities(GCA_MORPH *gcam,
 int GCAMsmoothConditionalDensities(GCA_MORPH *gcam, float sigma);
 
 #include "mrisurf.h"
-int GCAMmorphSurf(MRIS *mris, GCA_MORPH *gcam, int sampleInverse);
+int GCAMmorphSurf(MRIS *mris, GCA_MORPH *gcam);
 
 MRI *GCAMMScomputeOptimalScale(GCAM_MS *gcam_ms,
                                TRANSFORM *transform,
@@ -662,5 +662,6 @@ double MRIlabelMorphSSE(MRI *mri_source, MRI *mri_atlas, MRI *mri_morph) ;
   int gcamSmoothGradient( GCA_MORPH *gcam, int navgs );
 
 MRI *GCAMtoMRI(GCAM *gcam, MRI *mri);
+int GCAMgeomMatch(VOL_GEOM *mri, GCAM *gcam);
 
 #endif

@@ -120,6 +120,7 @@ int main(int argc, char *argv[])
   int  out_orientation_flag = FALSE;
   char out_orientation_string[STRLEN];
   char colortablefile[STRLEN] = "";
+  COLOR_TABLE *ctembedded=NULL;
   char tmpstr[STRLEN], *stem, *ext;
   char ostr[4] = {'\0','\0','\0','\0'};
   char *errmsg = NULL;
@@ -274,6 +275,10 @@ int main(int argc, char *argv[])
   Progname = (Progname == NULL ? argv[0] : Progname + 1);
 
   /* ----- pass the command line to mriio ----- */
+  // ??? why call mriio_command_line() ???
+  // mriio_command_line() is defined in mriio.cpp.
+  // it constructs the command line in 'static char *command_line'.
+  // MRIaddCommandLine() adds command line to mri->cmdlines
   mriio_command_line(argc, argv);
 
   /* ----- catch no arguments here ----- */
@@ -1551,6 +1556,8 @@ int main(int argc, char *argv[])
     }
     else if (strcmp(argv[i], "--diag") == 0 )
       get_ints(argc, argv, &i, &Gdiag_no, 1);
+    else if (strcmp(argv[i], "--diag-debug") == 0)
+      Gdiag |= DIAG_INFO;
     else if (strcmp(argv[i], "--mra") == 0 )
     {
       /* This flag forces DICOMread to first use 18,50 to get the slice thickness instead
@@ -2111,6 +2118,9 @@ int main(int argc, char *argv[])
     }
     exit(1);
   }
+
+  // Copy embedded colortable because it will get lost
+  if(mri->ct) ctembedded = CTABdeepCopy(mri->ct);
 
   if (upper_thresh_flag)
   {
@@ -3687,6 +3697,7 @@ int main(int argc, char *argv[])
     mri->ct = CTABreadASCII(colortablefile);
     if (!mri->ct) fs::fatal() << "could not read lookup table from " << colortablefile;
   }
+  else if(ctembedded) mri->ct = ctembedded;
 
   /*------ Finally, write the output -----*/
   

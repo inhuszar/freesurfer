@@ -77,6 +77,7 @@ add_library(utils STATIC
   fsglm.cpp
   fsinit.cpp
   fsPrintHelp.cpp
+  fstagsio.cpp
   gca.cpp
   gcaboundary.cpp
   gcalinearnode.cpp
@@ -203,6 +204,7 @@ add_library(utils STATIC
   surfcluster.cpp
   surfgrad.cpp
   svm.cpp
+  tfce.cpp
   tags.cpp
   talairachex.cpp
   targetpointset.cpp

@@ -165,7 +165,10 @@ typedef struct
 MRI_REGION ;
 
 
+// forward declarations
 struct VOL_GEOM;
+class  FStagsIO;
+
 MATRIX *MRIxfmCRS2XYZ( const VOL_GEOM *mri, int base ); /* Native Vox2RAS Matrix (scanner and xfm too) */
 MATRIX *MRIxfmCRS2XYZtkreg( const VOL_GEOM *mri );      // TkReg  Vox2RAS Matrix
 MATRIX *VGras2tkreg(VOL_GEOM *vg, MATRIX *ras2tkreg);
@@ -495,13 +498,14 @@ public:
   MRI_REGION roi;
 
   // ---- scan parameters ----
-  float tr = 0;                 // time to recovery
+  float tr = 0;                 // time to recovery, nifti1 hdr.pixdim[4]
   float te = 0;                 // time to echo
   float ti = 0;                 // time to inversion
   double flip_angle = 0;        // flip angle in radians
   float FieldStrength = 0;      // field strength
   char *pedir = nullptr;        // phase enc direction: ROW, COL, etc
   MATRIX *origRas2Vox = nullptr ;         // to get to original voxel grid from ras
+                                          // can be set from mri_convert --store_orig_ras2vox (-so)
   float location = 0;           // NOT USED
 
   // ---- DTI ----
@@ -523,8 +527,9 @@ public:
   char gdf_image_stem[STRLEN];
   char *cmdlines[MAX_CMDS];     // command line provenance
   int ncmds = 0;                // number of commands run previously
-  void *tag_data = nullptr;     // saved tag data
-  int tag_data_size = 0;        // size of tag data
+  // tag_data and tag_data_size don't seem to be used (2024-01-11)
+  //void *tag_data = nullptr;     // saved tag data
+  //int tag_data_size = 0;        // size of tag data
 
   // ---- TAG_GCAMORPH_META ----
   int warpFieldFormat = WarpfieldDTFMT::WARPFIELD_DTFMT_UNKNOWN;
@@ -1613,6 +1618,9 @@ float MRIvolumeDeterminant(MRI *mri);
 
 MRI *MRISreadCurvAsMRI(const char *curvfile, int read_volume);
 
+void MRITAGread(MRI *mri, znzFile fp, const char *fname, bool niftiheaderextension=false);
+void MRITAGwrite(MRI *mri, znzFile fp, bool niftiheaderextension=false);
+
 int mriio_command_line(int argc, char *argv[]);
 void mriio_set_gdf_crop_flag(int new_gdf_crop_flag);
 int MRIgetVolumeName(const char *string, char *name_only);
@@ -1709,9 +1717,9 @@ MRI *MRIconst(int ncols, int nrows, int nslices, int nframes,
 int MRInormalizeSequence(MRI *mri, float target) ;
 
 int setDirectionCosine(MRI *mri, int orientation);
-int getSliceDirection(MRI *mri);
+int getSliceDirection(VOL_GEOM *mri);
 int mriOKforSurface(MRI *mri); // check whether the volume is conformed or not
-int mriConformed(MRI *mri) ;
+int mriConformed(VOL_GEOM *mri) ; // IsConformed
 int MRIfindRightSize(VOL_GEOM *mri, float conform_size);
 float MRIfindMinSize(VOL_GEOM *mri, int *conform_width);
 
@@ -1765,7 +1773,7 @@ float MRIfovCol(MRI *mri);
 int MRIdircosToOrientationString(VOL_GEOM *mri, char *ostr);
 int MRIorientationStringToDircos(MRI *mri, const char *ostr);
 char *MRIcheckOrientationString(const char *ostr);
-char *MRIsliceDirectionName(MRI *mri);
+char *MRIsliceDirectionName(VOL_GEOM *mri);
 MRI *MRIreverseSliceOrder(MRI *invol, MRI *outvol);
 MRI *MRIconformSliceOrder(MRI *mri);
 
